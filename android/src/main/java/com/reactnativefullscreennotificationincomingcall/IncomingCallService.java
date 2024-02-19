@@ -6,6 +6,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.app.Person;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -21,6 +22,7 @@ import android.os.IBinder;
 import android.util.Log;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
+import android.content.pm.ServiceInfo;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -54,7 +56,7 @@ public class IncomingCallService extends Service {
           timeoutNumber=bundle.getInt("timeout");
         }
         Notification notification = buildNotification(getApplicationContext(), intent);
-        startForeground(1, notification);
+        startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S)  {
           sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
         }
@@ -123,23 +125,22 @@ public class IncomingCallService extends Service {
       notificationChannel.setVibrationPattern(new long[] { 0, 1000, 800});
       notificationManager.createNotificationChannel(notificationChannel);
     }
-    NotificationCompat.Builder notificationBuilder;
-    notificationBuilder = new NotificationCompat.Builder(context,channelId);
+    Person incomingCaller = new Person.Builder()
+      .setName(bundle.getString("name"))
+      .setImportant(true)
+      .build();
+    Notification.Builder notificationBuilder;
+    notificationBuilder = new Notification.Builder(context,channelId);
     notificationBuilder.setContentTitle(bundle.getString("name"))
         .setContentText(bundle.getString("info"))
         .setPriority(NotificationCompat.PRIORITY_MAX)
         .setCategory(NotificationCompat.CATEGORY_CALL)
         .setContentIntent(emptyPendingIntent)
-        .addAction(
-          0,
-          bundle.getString("declineText"),
-          onButtonNotificationClick(0,Constants.ACTION_PRESS_DECLINE_CALL,Constants.RNNotificationEndCallAction)
-       )
-        .addAction(
-            0,
-         bundle.getString("answerText"),
-              onButtonNotificationClick(1,Constants.ACTION_PRESS_ANSWER_CALL,Constants.RNNotificationAnswerAction)
-        )
+      .setStyle(Notification.CallStyle.forIncomingCall(
+        incomingCaller,
+        onButtonNotificationClick(0,Constants.ACTION_PRESS_DECLINE_CALL,Constants.RNNotificationEndCallAction),
+        onButtonNotificationClick(1,Constants.ACTION_PRESS_ANSWER_CALL,Constants.RNNotificationAnswerAction)
+      ))
       .setAutoCancel(true)
       .setOngoing(true)
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
