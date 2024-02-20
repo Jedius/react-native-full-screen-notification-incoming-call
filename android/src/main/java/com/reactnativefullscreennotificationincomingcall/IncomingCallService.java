@@ -185,7 +185,11 @@ public class IncomingCallService extends Service {
     if (isRegistered) return;
     IntentFilter filter = new IntentFilter();
     filter.addAction(Constants.ACTION_PRESS_DECLINE_CALL);
-    getApplicationContext().registerReceiver(mReceiver, filter);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      getApplicationContext().registerReceiver(mReceiver, filter, Context.RECEIVER_EXPORTED);
+    } else {
+      getApplicationContext().registerReceiver(mReceiver, filter);
+    }
     isRegistered = true;
   }
 
