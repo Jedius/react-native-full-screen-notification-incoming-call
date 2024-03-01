@@ -33,6 +33,11 @@ import com.facebook.react.bridge.WritableMap;
 
 import java.io.File;
 
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
+import com.squareup.picasso.Picasso;
+import com.squareup.picasso.Target;
+import android.graphics.Bitmap;
 
 public class IncomingCallService extends Service {
   private static Runnable handleTimeout;
@@ -55,8 +60,29 @@ public class IncomingCallService extends Service {
           Log.d(TAG, "has time out");
           timeoutNumber=bundle.getInt("timeout");
         }
-        Notification notification = buildNotification(getApplicationContext(), intent);
-        startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+
+        String personIconUrl = intent.getExtras().getString("personIconUrl");
+        if (personIconUrl != null && personIconUrl.length() > 3) {
+          Picasso.get().load(personIconUrl).transform(new CircleTransform()).into(new Target() {
+            @Override
+            public void onBitmapLoaded(Bitmap bitmap, Picasso.LoadedFrom from) {
+              Log.d(TAG, "onBitmapLoaded");
+              buildNotification(getApplicationContext(), intent, CircleTransform.transformStatic(bitmap));
+            }
+            @Override
+            public void onBitmapFailed(Exception e, Drawable errorDrawable) {
+              Log.e(TAG, "onBitmapFailed", e);
+              buildNotification(getApplicationContext(), intent, null);
+            }
+            @Override
+            public void onPrepareLoad(Drawable placeHolderDrawable) {
+              // Handle any preparation while the bitmap is loading
+              // Log.d(TAG, "onPrepareLoad");
+            }            
+          });          
+        } else {
+          buildNotification(getApplicationContext(), intent, null);
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S)  {
           sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
         }
@@ -93,10 +119,9 @@ public class IncomingCallService extends Service {
     emptyScreenIntent.putExtras(bundleData);
     emptyScreenIntent.putExtra("eventName",eventName);
     return PendingIntent.getActivity(this, 0, emptyScreenIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-  }
+  }  
 
-  private Notification buildNotification(Context context, Intent intent) {
-
+  private void buildNotification(Context context, Intent intent, Bitmap avatarBitmap) {
     Intent emptyScreenIntent = new Intent(context, NotificationReceiverActivity.class);
     Bundle bundle = intent.getExtras();
     bundleData=bundle;
@@ -125,33 +150,52 @@ public class IncomingCallService extends Service {
       notificationChannel.setVibrationPattern(new long[] { 0, 1000, 800});
       notificationManager.createNotificationChannel(notificationChannel);
     }
-    Person incomingCaller = new Person.Builder()
-      .setName(bundle.getString("name"))
-      .setImportant(true)
-      .build();
     Notification.Builder notificationBuilder;
     notificationBuilder = new Notification.Builder(context,channelId);
     notificationBuilder.setContentTitle(bundle.getString("name"))
-        .setContentText(bundle.getString("info"))
-        .setPriority(NotificationCompat.PRIORITY_MAX)
-        .setCategory(NotificationCompat.CATEGORY_CALL)
-        .setContentIntent(emptyPendingIntent)
-      .setStyle(Notification.CallStyle.forIncomingCall(
-        incomingCaller,
-        onButtonNotificationClick(0,Constants.ACTION_PRESS_DECLINE_CALL,Constants.RNNotificationEndCallAction),
-        onButtonNotificationClick(1,Constants.ACTION_PRESS_ANSWER_CALL,Constants.RNNotificationAnswerAction)
-      ))
+      .setContentText(bundle.getString("info"))
+      .setPriority(NotificationCompat.PRIORITY_MAX)
+      .setCategory(NotificationCompat.CATEGORY_CALL)
+      .setContentIntent(emptyPendingIntent)      
       .setAutoCancel(true)
       .setOngoing(true)
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
       .setVibrate(new long[] { 0, 1000, 800})
       .setSound(sound)
-        // Use a full-screen intent only for the highest-priority alerts where you
-        // have an associated activity that you would like to launch after the user
-        // interacts with the notification. Also, if your app targets Android 10
-        // or higher, you need to request the USE_FULL_SCREEN_INTENT permission in
-        // order for the platform to invoke this notification.
-        .setFullScreenIntent(emptyPendingIntent, true);
+      // Use a full-screen intent only for the highest-priority alerts where you
+      // have an associated activity that you would like to launch after the user
+      // interacts with the notification. Also, if your app targets Android 10
+      // or higher, you need to request the USE_FULL_SCREEN_INTENT permission in
+      // order for the platform to invoke this notification.
+      .setFullScreenIntent(emptyPendingIntent, true);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {       
+      Person.Builder caller = new Person.Builder()
+        .setName(bundle.getString("name"))
+        .setImportant(true);
+      if (avatarBitmap != null) {
+        caller.setIcon(Icon.createWithBitmap(avatarBitmap));
+      }
+      Person incomingCaller = caller.build();
+      notificationBuilder
+        .addPerson(incomingCaller)
+        .setStyle(Notification.CallStyle.forIncomingCall(
+          incomingCaller,
+          onButtonNotificationClick(0,Constants.ACTION_PRESS_DECLINE_CALL,Constants.RNNotificationEndCallAction),
+          onButtonNotificationClick(1,Constants.ACTION_PRESS_ANSWER_CALL,Constants.RNNotificationAnswerAction)
+        ).setIsVideo(true));
+    } else {
+      notificationBuilder
+        .addAction(
+          0,
+          bundle.getString("declineText"),
+          onButtonNotificationClick(0,Constants.ACTION_PRESS_DECLINE_CALL,Constants.RNNotificationEndCallAction)
+       )
+        .addAction(
+          0,
+          bundle.getString("answerText"),
+          onButtonNotificationClick(1,Constants.ACTION_PRESS_ANSWER_CALL,Constants.RNNotificationAnswerAction)
+        );
+    }
     if(bundle.getString("notificationColor")!=null){
       notificationBuilder.setColor(getColorForResourceName(context,bundle.getString("notificationColor")));
     }
@@ -159,12 +203,16 @@ public class IncomingCallService extends Service {
     if (iconName != null) {
       notificationBuilder.setSmallIcon(getResourceIdForResourceName(context, iconName));
     }
+    if (avatarBitmap != null) {
+      notificationBuilder.setLargeIcon(avatarBitmap);
+    }    
     if(timeoutNumber > 0){
       setTimeOutEndCall(uuid);
     }
     Notification notification = notificationBuilder.build();
     notification.flags |= Notification.FLAG_INSISTENT;
-    return notification;
+
+    startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL);
   }
 
   @Override
@@ -272,6 +320,3 @@ public class IncomingCallService extends Service {
 
 
 }
-
-
-
