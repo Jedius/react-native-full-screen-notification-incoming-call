@@ -60,29 +60,36 @@ public class IncomingCallService extends Service {
           Log.d(TAG, "has time out");
           timeoutNumber=bundle.getInt("timeout");
         }
-
-        String personIconUrl = intent.getExtras().getString("personIconUrl");
-        if (personIconUrl != null && personIconUrl.length() > 3) {
-          Picasso.get().load(personIconUrl).transform(new CircleTransform()).into(new Target() {
-            @Override
-            public void onBitmapLoaded(Bitmap bitmap, Picasso.LoadedFrom from) {
-              Log.d(TAG, "onBitmapLoaded");
-              buildNotification(getApplicationContext(), intent, CircleTransform.transformStatic(bitmap));
-            }
-            @Override
-            public void onBitmapFailed(Exception e, Drawable errorDrawable) {
-              Log.e(TAG, "onBitmapFailed", e);
-              buildNotification(getApplicationContext(), intent, null);
-            }
-            @Override
-            public void onPrepareLoad(Drawable placeHolderDrawable) {
-              // Handle any preparation while the bitmap is loading
-              // Log.d(TAG, "onPrepareLoad");
-            }            
-          });          
+        if (bundle.containsKey("avatar")) {
+          String avatar = bundle.getString("avatar");
+          if (avatar != null && avatar.length() > 3) {
+            Picasso.get().load(avatar).transform(new CircleTransform()).into(new Target() {
+              @Override
+              public void onBitmapLoaded(Bitmap bitmap, Picasso.LoadedFrom from) {
+                Log.d(TAG, "onBitmapLoaded");
+                buildNotification(
+                  getApplicationContext(),
+                  intent,
+                  CircleTransform.transformStatic(bitmap, false)
+                );
+              }
+              @Override
+              public void onBitmapFailed(Exception e, Drawable errorDrawable) {
+                Log.e(TAG, "onBitmapFailed", e);
+                buildNotification(getApplicationContext(), intent, null);
+              }
+              @Override
+              public void onPrepareLoad(Drawable placeHolderDrawable) {
+                // Handle any preparation while the bitmap is loading
+                // Log.d(TAG, "onPrepareLoad");
+              }            
+            }); 
+          } else {
+            buildNotification(getApplicationContext(), intent, null);
+          }
         } else {
           buildNotification(getApplicationContext(), intent, null);
-        }
+        }       
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S)  {
           sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
         }
@@ -182,7 +189,7 @@ public class IncomingCallService extends Service {
           incomingCaller,
           onButtonNotificationClick(0,Constants.ACTION_PRESS_DECLINE_CALL,Constants.RNNotificationEndCallAction),
           onButtonNotificationClick(1,Constants.ACTION_PRESS_ANSWER_CALL,Constants.RNNotificationAnswerAction)
-        ).setIsVideo(true));
+        ).setIsVideo(bundle.getBoolean("isVideo")));
     } else {
       notificationBuilder
         .addAction(
@@ -211,8 +218,8 @@ public class IncomingCallService extends Service {
     }
     Notification notification = notificationBuilder.build();
     notification.flags |= Notification.FLAG_INSISTENT;
-
     startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+    // return notification;    
   }
 
   @Override
